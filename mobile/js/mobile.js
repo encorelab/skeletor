@@ -19,7 +19,7 @@
       url: 'string'
     },
     rollcall: {db: 'string'},
-    login_picker:'boolean',
+    login_picker:'string',
     runs:'object'
   };
 
@@ -27,6 +27,7 @@
   app.runId= null;
   app.users = null; // users collection
   app.username = null;
+  app.usernames = [];
   app.runState = null;
   app.userState = null;
   app.numOfStudents = 0;
@@ -102,7 +103,6 @@
             return model.get('username');
           };
           app.users.sort();
-
           var currentUser = app.users.findWhere({username: app.username});
 
           if (currentUser) {
@@ -126,7 +126,7 @@
       console.log('No user and run found so prompt for username and runId');
       hideUsername();
       // fill modal dialog with user login buttons
-      if (app.config.login_picker) {
+      if (app.config.login_picker === "single" || app.config.login_picker === "multi") {
         hideLogin();
         showRunPicker();
         // showUserLoginPicker(app.runId);
@@ -354,6 +354,44 @@
     });
   };
 
+  app.loginUsers = function (usernameArray) {
+    // retrieve users with given usernames
+    app.rollcall.users({ username: { $in: usernameArray } })
+    .done(function (users) {
+      if (users) {
+        console.log(users.toJSON());
+
+        jQuery('.username-display a').append(app.runId+' - ');
+
+        users.each(function(u){
+          app.usernames.push(u.get('username'));
+          jQuery('.username-display a').append(u.get('display_name')+' ');
+        });
+
+        jQuery.cookie('hunger-games_mobile_usernames', app.usernames, { expires: 1, path: '/' });
+        
+
+        // show notes-screen
+        jQuery('#notes-screen').removeClass('hidden');
+
+        hideLogin();
+        hideUserLoginPicker();
+        showUsername();
+
+        app.setup();
+      } else {
+        console.log('Users '+usernameArray+' not found!');
+        if (confirm('Users '+usernameArray+' not found! Do you want to create the user to continue?')) {
+            // Create user and continue!
+            console.log('Create user and continue!');
+        } else {
+            // Do nothing!
+            console.log('No user logged in!');
+        }
+      }
+    });
+  };
+
   var logoutUser = function () {
     jQuery.removeCookie('hunger-games_mobile_username',  { path: '/' });
     jQuery.removeCookie('hunger-games_mobile_runId',  { path: '/' });
@@ -391,7 +429,8 @@
     jQuery('.username-display').addClass('hide');
   };
 
-  var showRunPicker = function(runs) {
+  var showRunPicker = function() {
+    jQuery('.modal-footer').hide();
     jQuery('.login-buttons').html(''); //clear the house
     console.log(app.config.runs);
 
@@ -410,7 +449,13 @@
       app.runId = jQuery(this).val();
       jQuery.cookie('hunger-games_mobile_runId', app.runId, { expires: 1, path: '/' });
       // jQuery('#login-picker').modal("hide");
-      showUserLoginPicker(app.runId);
+      if (app.config.login_picker === "single") {
+        showUserLoginPicker(app.runId);
+      } else if (app.config.login_picker === "multi") {
+        showMultiuserLoginPicker(app.runId);
+      } else {
+        console.warn("user login Picker mode "+app.config.login_picker+" is unexpected");
+      }
     });
 
     // show modal dialog
@@ -445,6 +490,54 @@
       jQuery('.login-button').click(function() {
         var clickedUserName = jQuery(this).val();
         app.loginUser(clickedUserName);
+      });
+
+      // show modal dialog
+      // jQuery('#login-picker').modal({backdrop: 'static'});
+    }); 
+  };
+
+  var showMultiuserLoginPicker = function(runId) {
+    // change header
+    jQuery('#login-picker .modal-header h3').text('Please select one or more names to login');
+
+    // retrieve all users that have runId
+    app.rollcall.usersWithTags([runId])
+    .done(function (availableUsers) {
+      jQuery('.login-buttons').html(''); //clear the house
+      console.log(availableUsers);
+      app.users = availableUsers;
+
+      // sort the collection by username
+      app.users.comparator = function(model) {
+        return model.get('display_name');
+      };
+      app.users.sort();
+
+      app.users.each(function(user) {
+        var button = jQuery('<button class="btn btn-large btn-primary login-button">');
+        button.val(user.get('username'));
+        button.text(user.get('display_name'));
+        jQuery('.login-buttons').append(button);
+      });
+
+      // show footer with login button
+      jQuery('.modal-footer').show();
+
+      // register click listeners
+      jQuery('.login-button').click(function() {
+        // var clickedUserName = jQuery(this).val();
+        // app.loginUser(clickedUserName);
+        jQuery(this).toggleClass('btn-success');
+      });
+
+      jQuery('.multi-login-button').click(function() {
+        var clickedUserNames = [];
+        jQuery('.modal-body .btn-success').each(function(){
+          clickedUserNames.push(jQuery(this).val());
+        });
+        console.log(clickedUserNames);
+        app.loginUsers(clickedUserNames);
       });
 
       // show modal dialog
